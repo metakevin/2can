@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <title>2CAN</title>
+  <script type="text/javascript" src="s/sockjs-0.3.min.js"></script>
+  <script type="text/javascript" src="s/jquery.js"></script>
+  <script type="text/javascript" src="s/jquery-ui.js"></script>
+  <link rel="stylesheet" href="s/jquery-ui.css">
+  <script>
+    $(function() {
+      var conn = null;
+
+
+      var d2h = function(d) {
+          var h = Number(d).toString(16);
+          while (h.length < 2) {
+              h = "0" + h;
+          }
+          return h;
+      }
+      var h2d = function(h) {
+          var d = parseInt(h, 16);
+          return d;
+      }
+      var t2s = function(ts) {
+          var ts_s = Math.floor(ts / 1000).toString(10);
+          var ts_ms = Number(ts % 1000).toString(10);
+          while (ts_s.length < 2) {
+              ts_s = " " + ts_s;
+          }
+          while (ts_ms.length < 3) {
+              ts_ms = "0" + ts_ms;
+          }
+          return ts_s + "." + ts_ms;
+      }
+          
+
+      function connect() {
+        disconnect();
+
+        var transports = ["websocket"]
+
+        conn = new SockJS('http://' + window.location.host + '/can', transports);
+
+        conn.onopen = function() {
+            update_ui();
+
+            $('#monitor').click(function(){
+                conn.send(JSON.stringify({"eval":"initbus()"}));
+            });
+            $('#log').click(function(){
+                conn.send(JSON.stringify({"eval":"logtoggle()"}));
+            });
+            $('#evalfree').submit(function(){
+                var x = JSON.stringify({"eval":$('#evaltext').val()});
+                conn.send(x);
+                return false;
+            });
+        }
+
+        conn.onmessage = function(e) {
+            var msg = JSON.parse(e.data);
+            if (msg.canframe) {
+                var canmsg = msg.canframe;
+                var tr = '<tr class="ui-widget-content ';
+                if (canmsg['interface'] == 0) {
+                    tr = tr + 'ui-state-highlight">';  
+                }
+                else {
+                    tr = tr + 'ui-state-error">';  
+                }
+
+                var id  = canmsg['canid'];
+                var dlc = canmsg['dlc'];
+                var key = id.toString() + "_" + dlc.toString();
+                tr = tr + '<td>' + t2s(canmsg['timestamp']);
+                tr = tr + '<td>' + canmsg['interface'];
+                tr = tr + '<td>' + d2h(canmsg['flags']);
+                tr = tr + '<td>' + d2h(dlc);
+                tr = tr + '<td>' + d2h(id);
+                var j;
+                for(j=0; j<canmsg['data'].length; j++) {
+                    tr = tr + '<td>' + d2h(canmsg['data'][j]);
+                }
+                for(; j<8; j++) {
+                    tr = tr + '<td>';
+                }
+                tr = tr + '<td><input type=text class="t_' + key + '" size=35 value="' + canmsg['annotation'] + '">';
+                tr = tr + "</tr>";
+                $('#msgtable tr:last').after(tr);
+                (function(key) {
+                    var k = $('#msgtable tr:last td .t_'+key);
+                    var a = key.match(/(\d+)_(\d+)/);
+                    k.removeAttr("keypress");
+                    k.keypress(function(e) {
+                        if (e.which == 13) {
+                            var x = JSON.stringify({"annotate":
+                                {"id": parseInt(a[1]), "dlc": parseInt(a[2]), "value":e.srcElement.value}});
+                            conn.send(x);
+                        }
+                    })
+                })(key);
+                $('#msgtable tr:last td:gt(4):lt(8)').mouseover(function() {
+                    var c = $(this).html();
+                    if (c.length > 0) {
+                        $(this).html(h2d(c));
+                    }
+                });
+                $('#msgtable tr:last td:gt(4):lt(8)').mouseout(function() {
+                    var c = $(this).html();
+                    if (c.length > 0) {
+                        $(this).html(d2h(c));
+                    }
+                });
+            }
+            if (msg.stats) {
+                for (var s in msg.stats) {
+                    if (msg.stats[s] > 0) {
+                        var th = $("[id='" + s + "']");
+                        if (th.length == 0) {
+                            $('#statstable tr:first').append('<th id=' + s + '>' + s);
+                            $('#statstable tr:last').append('<td id="val_' + s + '">');
+                        }
+                        var v = $("[id='val_" + s + "']");
+                        v.html(msg.stats[s]);
+                    }
+                }
+            }
+            if (msg.statustext) {
+                $('#statustext').val(msg.statustext);
+            }
+            if (msg.annotate) {
+                var key = msg.annotate['id'].toString() + "_" + msg.annotate['dlc'].toString();
+                $('.t_' + key).val(msg.annotate.value);
+            }
+            if (msg.relay) {
+                var key = msg.relay['id'].toString() + "_" + msg.relay['dlc'].toString();
+                if (msg.relay.relay) {
+                    $('.b_' + key).attr('checked', true);
+                }
+                else {
+                    $('.b_' + key).attr('checked', false);
+                }
+            }
+            if (msg.globalinvert) {
+                $('#ghwf0').attr('checked', msg.globalinvert.hwf0 ? true : false);
+                $('#ghwr0').attr('checked', msg.globalinvert.hwr0 ? true : false);
+                $('#ghwf1').attr('checked', msg.globalinvert.hwf1 ? true : false);
+                $('#ghwr1').attr('checked', msg.globalinvert.hwr1 ? true : false);
+            }
+            if (msg.filter) {
+                var id  = msg.filter['canid'];
+                var dlc = msg.filter['dlc'];
+                var key = id.toString() + "_" + dlc.toString();
+                if ($('#fc_' + key).length == 0) {
+                    var tr = '<tr class="ui-widget-content">';
+                    tr = tr + '<td>' + d2h(dlc);
+                    tr = tr + '<td>' + d2h(id);
+                    tr = tr + '<td id="fc_' + key + '">';
+                    tr = tr + '<td> <input type=checkbox id="fswf_' + key + '">';
+                    tr = tr + '<td> <input type=checkbox id="fswr_' + key + '">';
+                    tr = tr + '<td> <input type=checkbox id="fhwf_' + key + '">';
+                    tr = tr + '<td> <input type=checkbox id="fhwr_' + key + '">';
+                    tr = tr + '<td> <input type=text class="t_' + key + '" size=35 value="' + msg.filter.anno + '">';
+                    tr = tr + '<td> <a href="#" id="x_' + key + '">X</a>';
+                    tr = tr + "</tr>";
+                    $('#filtertable tr:last').after(tr);
+                    (function(id, dlc) {
+                      $('#fswf_' + key).click(function(e) {filterclick(id, dlc)});                                                 
+                      $('#fswr_' + key).click(function(e) {filterclick(id, dlc)});                                                 
+                      $('#fhwf_' + key).click(function(e) {filterclick(id, dlc)});                                                 
+                      $('#fhwr_' + key).click(function(e) {filterclick(id, dlc)});                                                 
+                      $('#x_' + key).click(function(e) {
+                          $('#msgtable tr td input.t_'+key).parent().parent().each(function() {
+                              $(this).remove();
+                            });
+                       });
+                      var k = $('#filtertable tr:last td .t_'+key);
+                      k.removeAttr("keypress");
+                      k.keypress(function(e) {
+                        if (e.which == 13) {
+                          var x = JSON.stringify({"annotate":
+                              {"id": parseInt(id), "dlc": parseInt(dlc), "value":e.srcElement.value}});
+                          conn.send(x);
+                        }
+                      });
+                     })(id, dlc);
+                }
+                $('#fc_' + key).html(msg.filter.count);
+                $('#fswf_' + key).attr('checked', msg.filter.swf?true:false);
+                $('#fswr_' + key).attr('checked', msg.filter.swr?true:false);
+                $('#fhwf_' + key).attr('checked', msg.filter.hwf?true:false);
+                $('#fhwr_' + key).attr('checked', msg.filter.hwr?true:false);
+            }
+            if (msg.auxdata) {
+                for (var key in msg.auxdata) {
+                    var val = msg.auxdata[key];
+                    var th = $('#msgtable tr:first th:contains("' + key + '")')
+                    if (th.length == 0) {
+                        $('#msgtable tr:first').append('<th class="ui-widget-header">' + key + '</th>');
+                        th = $('#msgtable tr:first th:contains("' + key + '")')
+                    }
+                    var idx = th.parent("tr").children().index(th);
+                    // add empty cells if necessary
+                    if ($('#msgtable tr').length == 1) {
+                        $('#msgtable tr:first').parent().append("<tr><td></tr>");
+                    }
+                    var tds = '#msgtable tr:last td:eq(' + idx + ')'
+                    if ($(tds).length == 0) {
+                        while(1) { 
+                            var xle = $('#msgtable tr:last td:last');
+                            var lidx = xle.parent("tr").children().index(xle);
+                            if (lidx >= idx) {
+                                break;
+                            }
+                            xle.parent("tr").append("<td></td>");
+                        }
+                    }
+                    if ($(tds).html() != "") {
+                        // need to make a new row
+                        var tr = '<tr class="ui-widget-content">';
+                        for(var j=0; j<=idx; j++) {
+                            tr += '<td>';
+                        }
+                        tr += "</tr>";
+                        $('#msgtable tr:last').after(tr);
+                    }
+                    $(tds).html(val);
+                }
+            }
+        };
+
+        conn.onclose = function() {
+          conn = null;
+          update_ui();
+        };
+      }
+
+      function filterclick(id, dlc) {
+          var key = id.toString() + "_" + dlc.toString();
+          var m = {"canid": id, "dlc": dlc};
+          m['swf'] = $('#fswf_' + key).attr('checked')=="checked"?1:0;
+          m['swr'] = $('#fswr_' + key).attr('checked')=="checked"?1:0;
+          m['hwf'] = $('#fhwf_' + key).attr('checked')=="checked"?1:0;
+          m['hwr'] = $('#fhwr_' + key).attr('checked')=="checked"?1:0;
+          var x = JSON.stringify({"filter": m});
+          conn.send(x);
+      }
+
+      function disconnect() {
+        if (conn != null) {
+
+          conn.close();
+          conn = null;
+
+          update_ui();
+        }
+      }
+
+      function update_ui() {
+        var msg = '';
+
+        if (conn == null || conn.readyState != SockJS.OPEN) {
+          $('#status').text('disconnected').removeClass("ui-state-highlight").addClass("ui-state-alert");
+          $('#connect').text('Connect');
+        } else {
+          $('#status').text('connected (' + conn.protocol + ')').addClass("ui-state-highlight");
+          $('#connect').text('Disconnect');
+        }
+      }
+
+      $('#connect').click(function() {
+        if (conn == null) {
+          connect();
+        } else {
+          disconnect();
+        }
+
+        update_ui();
+        return false;
+      });
+
+      $('#pause').click(function() {
+        if ($(this).html() == 'Pause') {
+            conn.send(JSON.stringify({"eval":"pause(1)"}));
+            $(this).html('Resume');
+        }
+        else if ($(this).html() == 'Resume') {
+            conn.send(JSON.stringify({"eval":"pause(0)"}));
+            $(this).html('Pause');
+        }
+      });
+
+      function globalclick() {
+          var m = {"globalinvert": {"hwf0": $('#ghwf0').attr('checked')=="checked"?1:0,
+                                    "hwr0": $('#ghwr0').attr('checked')=="checked"?1:0,
+                                    "hwf1": $('#ghwf1').attr('checked')=="checked"?1:0,
+                                    "hwr1": $('#ghwr1').attr('checked')=="checked"?1:0
+                                    }
+                  };
+          conn.send(JSON.stringify(m));
+      }
+
+      $('#ghwf0').click(globalclick);
+      $('#ghwr0').click(globalclick);
+      $('#ghwf1').click(globalclick);
+      $('#ghwr1').click(globalclick);
+
+
+      connect();
+    
+    });
+</script>
+</head>
+<body>
+
+<div id="wrapper">
+    <h1 class="ui-widget-header">2CAN Protocol Analyzer</h3>
+    <p class="ui-widget-header">Connection: <span id="status">disconnected</span><button id="connect">Connect</button></p>
+
+
+    <table class="ui-widget ui-widget-content ui-corner-all">
+        <tr class="ui-widget-content">
+            <td><button id="monitor">Init</button></td>
+            <td><button id="log">Log</button></td>
+            <td><button id="load">Load</button></td>
+            <td>
+                <form id="evalfree">
+                    Eval: <input type="text" id="evaltext" size=20>
+                    <input type="submit" value="go"/>
+                    Status: <input type="text" readonly id="statustext" size=40>
+                </form>
+            </td>
+            <td><button id="pause">Pause</button></td>
+        </tr>
+    </table>
+
+    <table class="ui-widget ui-widget-content ui-corner-all" id=statstable>
+        <tr class="ui-widget-header">
+        </tr>
+        <tr class="ui-widget-content">
+        </tr>
+    </table>
+
+    <table class="ui-widget ui-widget-content ui-corner-all" id=filtertable>
+        <tr>
+              <th class="ui-widget-header" colspan=5>Invert interface 0</th>
+              <th class="ui-widget-header"><input type=checkbox id="ghwf0">
+              <th class="ui-widget-header"><input type=checkbox id="ghwr0">
+              <th class="ui-widget-header"></th>
+        </tr>
+        <tr>
+              <th class="ui-widget-header" colspan=5>Invert interface 1</th>
+              <th class="ui-widget-header"><input type=checkbox id="ghwf1">
+              <th class="ui-widget-header"><input type=checkbox id="ghwr1">
+              <th class="ui-widget-header"></th>
+        </tr>
+        <tr>
+              <th class="ui-widget-header">DLC</th>
+              <th class="ui-widget-header">SID</th>
+              <th class="ui-widget-header">RX #</th>
+              <th class="ui-widget-header">SWF</th>
+              <th class="ui-widget-header">SWR</th>
+              <th class="ui-widget-header">HWF</th>
+              <th class="ui-widget-header">HWR</th>
+              <th class="ui-widget-header">Annotation</th>
+        </tr>
+        <tr class="ui-widget-content">
+        </tr>
+    </table>
+    
+
+</div>
+
+  <div>
+      <table class="ui-widget ui-widget-content ui-corner-all" id=msgtable>
+          <tr>
+              <th class="ui-widget-header">T</th>
+              <th class="ui-widget-header">IF</th>
+              <th class="ui-widget-header">F</th>
+              <th class="ui-widget-header">DLC</th>
+              <th class="ui-widget-header">SID</th>
+              <th class="ui-widget-header">0</th>                  
+              <th class="ui-widget-header">1</th>                  
+              <th class="ui-widget-header">2</th>                  
+              <th class="ui-widget-header">3</th>                  
+              <th class="ui-widget-header">4</th>                  
+              <th class="ui-widget-header">5</th>                  
+              <th class="ui-widget-header">6</th>                  
+              <th class="ui-widget-header">7</th>                  
+              <th class="ui-widget-header">ID:DLC Annotation</th>          
+          </tr>
+      </table>
+  </div>
+
+
+</body>
+</html>
+
