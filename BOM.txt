@@ -1,3 +1,5 @@
+Tab delimited - set tab stops to 25
+
 Qty	Populate?	Digikey Part	Value	Device	Parts
 1		A26536-40-ND		PINHD-2X5	JTAG
 10		C2012X7R1H104K/1.25	.1uF	C-USC0805	"C1, C3, C4, C9, C12, C13, C14, C21, C22, C23"
@@ -36,4 +38,3 @@ Qty	Populate?	Digikey Part	Value	Device	Parts
 					
 					
 					
-	Parts in gray box should be double checked -- they were parts I had on hand.  I looked these up in digikey but did not order them.  				
