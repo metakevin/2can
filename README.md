@@ -34,17 +34,17 @@ is connected to.  Above you can see it determined automatically that
 COM3 was the correct port by enumerating all FTDI chips and looking for
 the one with the matching device description.
 
-[http://bleyer.org/pyusb/](Download PyUSB 1.6 here)
+[Download PyUSB 1.6 here](http://bleyer.org/pyusb/)
 
 
 TODO: details on programming FTDI chip to have '2CAN' as the device description.
 
 # Web Interface
 
-2con.py starts a web server on port 8888.  Connect to http://localhost:8888 with a modern browser that supports websockets.  [https://github.com/metakevin/2can/blob/master/screenshot.png](Screenshot)
+2con.py starts a web server on port 8888.  Connect to http://localhost:8888 with a modern browser that supports websockets.  [Screenshot](https://github.com/metakevin/2can/blob/master/screenshot.png)
 
 # Embedded Software
 
-The '2can' directory contains the embedded code.  '2can.avrgccproj' is the project file for AVR Studio 5.  There is no Makefile.  It may build with AVR Studio 6 but I have not tried it.  [http://www.atmel.com/tools/STUDIOARCHIVE.aspx](Atmel web site with older versions for download)
+The '2can' directory contains the embedded code.  '2can.avrgccproj' is the project file for AVR Studio 5.  There is no Makefile.  It may build with AVR Studio 6 but I have not tried it.  [Atmel web site with older versions for download](http://www.atmel.com/tools/STUDIOARCHIVE.aspx)
 
 
