@@ -1147,6 +1147,8 @@ while 1:
         break
     except exceptions.EOFError:
         break
+    except exceptions.ValueError:
+        break
     except:
         (t, v, tb) = sys.exc_info()
         print "Exception:", t, v

@@ -36,6 +36,17 @@ the one with the matching device description.
 
 [Download PyUSB 1.6 here](http://bleyer.org/pyusb/)
 
+Install Python 2.6
+
+[Install setuptools](http://pypi.python.org/pypi/setuptools#files)
+
+Install Tornado:
+
+    C:\Python26\Scripts>easy_install tornado
+
+Install sockjs:
+    git clone git://github.com/mrjoes/sockjs-tornado
+    C:\...GitHub\sockjs-tornado>python setup.py install
 
 TODO: details on programming FTDI chip to have '2CAN' as the device description.
 
