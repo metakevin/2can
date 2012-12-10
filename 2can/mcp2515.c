@@ -73,7 +73,6 @@ typedef struct {
     u8 data[8];
 } canrx_t;
 
-
 /* Pinning:
  * B5: /RESET
  * C7: OSC
@@ -259,7 +258,7 @@ static u8 mcp_task()
 		plen &= 0xF;
 		
 		u8 match = can_id_match(a, 1);
-		if (!(match&SIDFILTER_NOHOST) || (match&SIDFILTER_RELAY))
+		if ((!(match&SIDFILTER_NOHOST)) || (match&SIDFILTER_RELAY))
 		{
 			/* possible optimization: burst read of N+1 bytes where N is the value of the first byte read */
 			if (plen > 0)
@@ -276,9 +275,9 @@ static u8 mcp_task()
 			if (match&SIDFILTER_RELAY)
 			{
 				mailbox_deliver(&can_taskinfo.mailbox,
-								    CAN_SEND_RAW_MSG, sizeof(can_addr_t)+plen, &m[sizeof(timerinterval_t)]);				
+								    CAN_SEND_RAW_MSG, sizeof(can_addr_t)+plen, &m[sizeof(timerinterval_t)]);		
 			}			
-		}				
+		}			
 		ret = 1;
 //		restore_flags(flags);
 	}

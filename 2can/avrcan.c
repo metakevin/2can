@@ -41,9 +41,18 @@
 #define NUM_MESSAGE_OBJECTS 15
 static void clear_current_message_object()
 {
-    u8 volatile *r;
-    for(r=&CANSTMOB; r<&CANSTML; r++)
-        *r = 0;
+    //u8 volatile *r;
+    //for(r=&CANSTMOB; r<&CANSTML; r++)
+    //    *r = 0;
+	CANSTMOB=0;
+	CANCDMOB=0;
+	// clear any bits not masked by the acceptance filter
+	CANIDT1 &= CANIDM1; 
+	CANIDT2 &= CANIDM2; 
+	CANIDT3 &= CANIDM3; 
+	CANIDT4 &= CANIDM4; 
+//	CANSTML=0;
+//	CANSTMH=0;	
 }
 #if 0
 static void clear_all_message_objects()
@@ -165,6 +174,9 @@ static u8 can_mailbox_buf[80];
 static u8 can_task();
 
 u16 sidfilter[SIDFILTER_BLOCK_SIZE*SIDFILTER_NUM_BLOCKS];
+canstats_t canstats;
+u8 can_int_err;
+
 
 task_t *can_task_create()
 {
@@ -188,6 +200,15 @@ u8 can_id_match(can_addr_t *addr, u8 interface)
 {
 	u8 i;
 	u8 r = 0; /* not filtered */
+//	if (interface == 0)
+//	{
+//		r = (SIDFILTER_NOHOST | SIDFILTER_RELAY);
+//	}
+//	if (addr->id == 0x440)
+//	{
+//		r = SIDFILTER_NOHOST;
+//		goto done;
+//	}
 	for(i=0; i<sizeof(sidfilter)/sizeof(sidfilter[0]); i++)
 	{
 		if ((sidfilter[i]&SIDFILTER_VALID_MASK) == 0)
@@ -205,11 +226,17 @@ u8 can_id_match(can_addr_t *addr, u8 interface)
 	r ^= filter_sense;
 	// now adjust for interface
 	r >>= 2*interface; 
+done:
+    if (r & SIDFILTER_NOHOST)
+	{
+		++canstats.rx_filtered;
+	}
+	if (r & SIDFILTER_RELAY)
+	{
+		++canstats.rx_relayed;
+	}			
 	return r;
 }
-
-canstats_t canstats;
-u8 can_int_err;
 
 void send_canstats(u8 clear_on_send)
 {
@@ -276,6 +303,30 @@ u8 can_task()
 				mailbox_copy_payload(&can_taskinfo.mailbox, &filter_sense, 1, 0);
 			}
 			break;			
+        case CAN_SET_ACCEPT_FILTER: 
+            if (payload_len == 8)
+            {
+                u8 idtidm[8];
+                mailbox_copy_payload(&can_taskinfo.mailbox, idtidm, sizeof(idtidm), 0);				
+				// FIXME: disable CAN controller?
+				// FIXME: this could support up to 8 different SIDs
+				u8 page;
+				for(page=0; page<RX_MOB_MAX; page++)
+				{
+					CANPAGE = (page<<4);
+					clear_current_message_object();
+					config_for_rx();
+					CANIDM1 = idtidm[0];
+					CANIDM2 = idtidm[1];
+					CANIDM3 = idtidm[2];
+					CANIDM4 = idtidm[3];
+					CANIDT1 = idtidm[4];
+					CANIDT2 = idtidm[5];
+					CANIDT3 = idtidm[6];
+					CANIDT4 = idtidm[7];
+				}								
+            }
+            break;
 		case CAN_SET_BT:
 			{
 				u8 canbt[3];
@@ -404,15 +455,10 @@ SIGNAL(SIG_CAN_INTERRUPT1)
 					mailbox_deliver(&can_taskinfo.mailbox, 
 									CAN_MSG_RX, sizeof(timerinterval_t)+sizeof(can_addr_t)+len, canbuf);
 				}
-				else 
-				{
-					++canstats.rx_filtered;				
-				}		
 				if (match&SIDFILTER_RELAY)
 				{
 					mailbox_deliver(&mcp_taskinfo.mailbox,
 								     CAN_SEND_RAW_MSG, sizeof(can_addr_t)+len, &canbuf[sizeof(timerinterval_t)]);				
-					++canstats.rx_relayed;
 				}				
 			}				
 			++demux;

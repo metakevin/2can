@@ -1,0 +1,16 @@
+
+
+TCU messages
+
+0x540 : 7 frames at startup, 8 bytes each
+Octets 1:6 constant:  xx 00 ff 00 ff 00 10 xx
+Octents 0, 7 vary:    f0                   0f
+                      00                   26
+                      10                   26 
+                      20                   26
+                      30                   26
+                      40                   0f
+                      50                   0f
+
+
+               

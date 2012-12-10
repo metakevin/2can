@@ -43,8 +43,10 @@
 #define CAN_MSG_RX             0x3
 #define CAN_STATS              0x4
 #define CAN_RX_ERROR           0xE
+#define CAN_SET_ACCEPT_FILTER  0xA
 #define CAN_SET_BT             0xB
 #define CAN_SET_SID_FILTER     0xC
+
 #define BROADCAST_NODE_ID      0xF
 
 #define MCP_REG_READ           0x4

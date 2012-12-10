@@ -28,6 +28,7 @@ import serial
 from time import *
 import os
 import sys
+import time
 import traceback
 import random
 import exceptions
@@ -55,12 +56,15 @@ COMMS_MSG_CAN_RAW      = 1
 CAN_SEND_RAW_MSG       = 2
 CAN_STATS              = 4
 CAN_SET_BT = 0xB
+CAN_SET_ACCEPT_FILTER = 0xA
 CAN_SET_SID_FILTER = 0xC
 
 def sendbytes(bytes):
 #    print "Sending " + str([hex(x) for x in bytes])
     #usb.write(array.array('B', bytes).tostring())
     ser.write(array.array('B', bytes).tostring())
+
+tofile = None
 
 msg = []
 def send(task, code, payload=[]):
@@ -129,6 +133,10 @@ def usbread(l):
 #    hs = [hex(x) for x in bs]
 #    print "Received",hs
     return bs
+
+def rd():
+    bs = usbread(256)
+    print [hex(x) for x in bs]
 
 def usbread_esc(n):
     bv = []
@@ -594,11 +602,13 @@ def canspeed(bps):
 def resetavr():
     serclose()
     usbopen()
-    # toggle CBUS2 (/RST)
+    # toggle CBUS2 (/RST) 
     usb.setBitMode(0x40,0x20)
     usb.setBitMode(0x44,0x20)
     usbclose()
+    print "reset opening serial"
     seropen(9600)
+    print "serial opened"
 
 def newspeed(bps=9600):
     ser.baudrate = 9600
@@ -650,11 +660,75 @@ def seropen(bps):
 def serclose():
     rxqctrl.put("wait")
     rxq.get()
+    print "Sleep waiting for rxq stop"
+    sleep(1)
     global ser
     ser.close()
 
 seropen(9600)
 print "Opened serial port", ser.portstr
+
+
+def rawread(n):
+    bv = []
+    for i in range(0,n):
+        b = usbread(1)[0]
+        bv.append(b)
+    return bv
+
+
+def enter_bootloader():
+    serclose()
+    usbopen()
+    # assert CBUS2 (/RST)
+    # set CBUS3 high (enter bootloader mode)
+    usb.setBitMode(0xC8,0x20)
+
+    # deassert /RST, leave CBUS3 high
+    usb.setBitMode(0xCC,0x20)
+    usbclose()
+    print "bootloader opening serial"
+    seropen(38400)
+    print "serial opened, waiting for bootloader..."
+    try:
+        s = rawread(6);
+        print "got '%s'"%(s)
+    except TimeoutException:
+        print "Timed out waiting for bootloader"
+
+def load_hex(filename):
+    import ihex
+    f = ihex.IHex();
+    f.read_file(filename);
+    for addr, data in f.areas.iteritems():
+        print "Area at %X for %X"%(addr, len(data))
+        
+def bootloader():
+
+        
+    while 1:
+        try:
+            input("2CAN bootloader>")
+        except exceptions.KeyboardInterrupt:
+            break
+        except exceptions.EOFError:
+            break
+        except exceptions.ValueError:
+            break
+        except:
+            (t, v, tb) = sys.exc_info()
+            print "Exception:", t, v
+            print traceback.print_tb(tb)
+    sys.exit(1)
+
+
+if len(sys.argv) > 1:
+    if sys.argv[1] == 'prog':
+        print "Entering bootloader mode"
+        bootloader()
+    else:
+        print "unrecognized argument"
+
 
 def rxhandler():
     cbs = []
@@ -665,6 +739,8 @@ def rxhandler():
             for c in filter(lambda x: x[0:2] == m[0:2], cbs):
 #                print "Callback for %X/%X" % (c[0], c[1])
                 havecb = 1
+                global rxtime
+                rxtime = time.time()
                 c[2](m)
             if havecb == 0:
                 rxq.put(m)
@@ -676,11 +752,11 @@ def rxhandler():
                 print "RX handler stopped"
                 break
             elif what == "wait":
-#                print "RX handler waiting"
+                print "RX handler waiting"
                 rxq.put([])
                 block = rxqctrl.get()
             elif what == "go":
-#                print "RX handler: go"
+                print "RX handler: go"
                 pass
             elif isinstance(what, (list,tuple)):
                 if what[0] == "addcb":
@@ -772,6 +848,15 @@ def canframecb(msg):
     frameout(canframe)
 
 def frameout(canframe):
+    global tofile
+    if tofile:
+        global rxtime
+        ts = strftime("%%H:%%M:%%S.%03d"%((rxtime-int(rxtime))*1000),time.localtime(rxtime))
+        log = "%s %03X %s\n"%(ts, canframe['canid'], ' '.join(["%02X"%(i) for i in canframe['data']]))
+        tofile.write(log)
+        #print log
+        return
+
     logframe(canframe)    
     if not do_filter(canframe['canid'], canframe['dlc']):
         tracemsg("RX%d"%(canframe['interface']), canframe['timestamp'],canframe['canid'],canframe['flags'],canframe['data'])
@@ -798,7 +883,14 @@ def unlog(filename):
     for frame in log:
         frameout(frame)
 
+def tofileonly(filename):
+    global tofile
+    tofile = open(filename, "w+")
 
+def closetofile():
+    global tofile
+    tofile.close()
+    tofile = None
 
 def statscb(msg):
     task = msg[0]
@@ -871,6 +963,52 @@ def initbus():
             threading.Timer(1, stats).start()
 
     stats()
+
+def acceptfilter(sid, mask):
+    # program hardware acceptance filter to only accept the given SID
+    idtidm = range(0,8)
+    idtidm[0] = (mask&0x7FF)>>3
+    idtidm[1] = (mask&7)<<5
+    idtidm[2] = 0
+    idtidm[3] = 0 
+    idtidm[4] = (sid&0x7FF)>>3
+    idtidm[5] = (sid&7)<<5
+    idtidm[6] = 0
+    idtidm[7] = 0 
+    send(TASK_ID_CAN, CAN_SET_ACCEPT_FILTER, idtidm)
+        
+
+def logone(sid):
+    webstatus("Resetting 2CAN")
+    newspeed(500000)
+    webstatus("Setting CAN speed")
+    canspeed(500000)
+    mcpmode("normal")
+    
+    rxqctrl.put(["resetcb"]);
+    add_rcv_cb(TASK_ID_CAN, COMMS_MSG_CAN_RAW, canframecb)
+
+    acceptfilter(sid, 0x7FF)
+    filename = strftime("%m-%d_%H_%M")+"_%03X"%(sid)+".log"
+    print "Logging to %s"%(filename)
+    tofileonly(filename)
+
+
+pcancelf = 0
+def periodic(ms, iface, sid, data):
+    global pcancelf
+    pcancelf = 0
+    def psend():
+	cansend(iface, sid, data)
+	print "sent %03X to if %d"%(sid, iface)
+	if not pcancelf:
+	    threading.Timer(.5, psend).start()
+    psend()
+
+def pcancel():
+   global pcancelf
+   pcancelf = 1
+
 
 def logtoggle():
     global logging, logfilename
@@ -1172,3 +1310,5 @@ if len(logpickles) > 0:
     f = open(logfilename, "wb")
     pickle.dump(logpickles, f)
     f.close()
+
+
